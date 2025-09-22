@@ -1,0 +1,78 @@
+# Default values for discord-music-bot.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: discord-music-bot
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+# Bot secrets - REQUIRED
+secrets:
+  # Discord bot token - REQUIRED
+  discordToken: ""
+  # Spotify client ID - REQUIRED
+  spotifyClientId: ""
+  # Spotify client secret - REQUIRED
+  spotifyClientSecret: ""
+
+# Additional environment variables
+env: {}
+  # EXAMPLE_VAR: "example_value"
+
+# ConfigMap for additional configuration
+configMap:
+  enabled: false
+  data: {}
+    # example_config: "value"
+
+# Persistence configuration
+persistence:
+  # Enable persistent storage for downloads and cookies
+  enabled: false
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  storageClass: ""
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Restart policy
+restartPolicy: Always

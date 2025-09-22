@@ -17,3 +17,5 @@ youtube-cookies.txt
 
 # Cache
 .cache
+.venv/
+.task/

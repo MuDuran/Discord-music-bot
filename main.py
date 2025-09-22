@@ -23,13 +23,15 @@ spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIF
                                                                  client_secret=SPOTIFY_SECRET))
 
 # Configurações do yt-dlp
-# Cria uma pasta chamada 'downloads' no seu projeto para organizar os arquivos
+# Cria as pastas necessárias para downloads e cookies
 if not os.path.exists('downloads'):
     os.makedirs('downloads')
+if not os.path.exists('cookies'):
+    os.makedirs('cookies')
 
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
-    'cookiefile': 'youtube-cookies.txt',
+    'cookiefile': 'cookies/youtube-cookies.txt',
     'outtmpl': 'downloads/%(id)s.%(ext)s', # Salva o arquivo com um nome único na pasta downloads
     'restrictfilenames': True,
     'noplaylist': True,
