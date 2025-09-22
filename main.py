@@ -3,13 +3,14 @@ import discord
 import spotipy
 import yt_dlp
 import asyncio
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from spotipy.oauth2 import SpotifyClientCredentials
 
 # Declarção de variáveis globais
 song_queue = []
 disconnect_timer = None
+currently_playing_file = None
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -22,7 +23,29 @@ spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIF
                                                                  client_secret=SPOTIFY_SECRET))
 
 # Configurações do yt-dlp
-YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': 'True'}
+# Cria uma pasta chamada 'downloads' no seu projeto para organizar os arquivos
+if not os.path.exists('downloads'):
+    os.makedirs('downloads')
+
+YDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'cookiefile': 'youtube-cookies.txt',
+    'outtmpl': 'downloads/%(id)s.%(ext)s', # Salva o arquivo com um nome único na pasta downloads
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0',
+    # Converte o áudio para o formato opus para melhor performance com discord.py
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'opus',
+    }],
+}
 FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
 # Define as intents (permissões) que o bot precisa
@@ -38,6 +61,7 @@ async def on_ready():
     print(f'Bot conectado como {bot.user}')
     print('QUAAAAAACK! É HORA DO SHOW!')
     print('------')
+    buffer_manager.start()
 
 @bot.command(name='join')
 async def join(ctx):
@@ -65,93 +89,139 @@ async def leave(ctx):
     else:
         await ctx.send('Eu não estou em nenhum canal de voz.')
 
-def search_and_extract_info(search_term):
+def download_song(search_query):
     """
-    Função síncrona que executa o trabalho pesado do yt-dlp.
-    Retorna o dicionário 'info' da primeira entrada encontrada.
+    Função síncrona que lida com Spotify, baixa a música e retorna o info do yt-dlp.
     """
-    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+    search_term = search_query
+    if "open.spotify.com" in search_term:
         try:
-            search_results = ydl.extract_info(f"ytsearch:{search_term}", download=False)
-            if not search_results or not search_results.get('entries'):
-                return None # Retorna None se nada for encontrado
-            return search_results['entries'][0]
+            track = spotify.track(search_term)
+            search_term = f"{track['name']} {track['artists'][0]['name']}"
         except Exception as e:
-            print(f"Erro no search_and_extract_info: {e}")
+            print(f"Erro ao processar Spotify: {e}")
             return None
 
-@bot.command(name='play', help='Toca uma música do YouTube ou Spotify')
+    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+        try:
+            info = ydl.extract_info(f"ytsearch:{search_term}", download=True)['entries'][0]
+            return info
+        except Exception as e:
+            print(f"Erro no download/busca: {e}")
+            return None
+
+@tasks.loop(seconds=5.0)
+async def buffer_manager():
+    """Verifica a fila e pré-carrega a próxima música."""
+    if not song_queue or len(song_queue) == 0:
+        return
+        
+    next_song = song_queue[0]
+    
+    if next_song.get('filepath'):
+        return
+
+    print(f"Buffer Manager: Pré-carregando '{next_song['title']}'...")
+    info = await bot.loop.run_in_executor(None, download_song, next_song['query'])
+    
+    if info:
+        filepath = info.get('requested_downloads')[0].get('filepath')
+        song_queue[0].update({
+            'title': info.get('title', 'Título desconhecido'),
+            'filepath': filepath
+        })
+        print(f"Buffer Manager: '{info.get('title')}' pré-carregado com sucesso.")
+    else:
+        print(f"Buffer Manager: Falha ao pré-carregar '{next_song['title']}'. Removendo da fila.")
+        song_queue.pop(0)
+
+@bot.command(name='play', help='Toca uma música ou a adiciona na fila com buffer.')
 async def play(ctx, *, search: str):
     global disconnect_timer
     if disconnect_timer:
         disconnect_timer.cancel()
         disconnect_timer = None
 
-    # --- Bloco de conexão ao canal de voz (sem alterações) ---
     if not ctx.author.voice:
         await ctx.send("Você precisa estar em um canal de voz para usar este comando!")
         return
     if not ctx.voice_client:
-        try:
-            channel = ctx.author.voice.channel
-            await channel.connect()
-        except Exception as e:
-            await ctx.send("Não consegui me conectar ao canal de voz.")
-            print(f"Erro ao conectar no canal: {e}")
-            return
+        await ctx.author.voice.channel.connect()
 
-    # --- LÓGICA DE BUSCA (com pequena alteração) ---
-    search_term = search
-    if "open.spotify.com" in search:
-        try:
-            await ctx.send("Processando link do Spotify...")
-            track = spotify.track(search)
-            track_name = track['name']
-            artist_name = track['artists'][0]['name']
-            search_term = f"{track_name} {artist_name}"
-            await ctx.send(f'Música encontrada: **{track_name}** por **{artist_name}**. Buscando no YouTube...')
-        except Exception as e:
-            await ctx.send("Ocorreu um erro ao processar o link do Spotify.")
-            print(f"Erro na API do Spotify: {e}")
-            return
+    # Adiciona a 'tarefa' à fila. O buffer_manager vai cuidar do resto.
+    song_task = {'query': search, 'title': search, 'filepath': None}
+    song_queue.append(song_task)
+    await ctx.send(f"**Adicionado à fila:** `{search}`")
 
-    # --------------------------------------------------------------------------
-    # MUDANÇA PRINCIPAL: EXECUTANDO A BUSCA EM SEGUNDO PLANO
-    # --------------------------------------------------------------------------
-    await ctx.send(f"🔎 Buscando por `{search_term}`...")
+    # Se NADA estiver tocando, inicia a primeira música para ser rápido
+    if not ctx.voice_client.is_playing():
+        play_next(ctx)
+
+async def delayed_cleanup(path):
+    """Espera um pouco e depois apaga um arquivo para evitar condições de corrida."""
+    await asyncio.sleep(10)  # Espera 3 segundos
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+            print(f"Limpeza atrasada: Arquivo removido: {path}")
+    except OSError as e:
+        print(f"Limpeza atrasada: Erro ao remover o arquivo {path}: {e}")
+
+def play_after_cleanup(ctx, song_path):
+    """
+    Inicia a tarefa de limpeza atrasada para o arquivo antigo e 
+    chama a próxima música imediatamente.
+    """
+    global currently_playing_file
     
-    # Delegamos a função bloqueante 'search_and_extract_info' para o executor do loop
-    info = await bot.loop.run_in_executor(None, search_and_extract_info, search_term)
-
-    if info is None:
-        await ctx.send(f"Não encontrei nenhum resultado no YouTube para `{search_term}`.")
-        return
+    # Inicia a limpeza em segundo plano, sem esperar
+    bot.loop.create_task(delayed_cleanup(song_path))
     
-    # --- O resto da lógica da fila e de tocar a música continua igual ---
-    song = {'url': info['url'], 'title': info['title']}
-    
-    if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
-        song_queue.append(song)
-        await ctx.send(f"**Adicionado à fila:** {song['title']}")
-    else:
-        ctx.voice_client.play(discord.FFmpegPCMAudio(song['url'], **FFMPEG_OPTIONS), after=lambda e: play_next(ctx))
-        await ctx.send(f'**Tocando agora:** {song["title"]}')
+    currently_playing_file = None
+    play_next(ctx)
 
-# Função auxiliar para tocar a próxima da fila
 def play_next(ctx):
-    # Verifica se a fila não está vazia E se o bot ainda está conectado
+    """Verifica a fila e toca a próxima música, seja do buffer ou baixando na hora."""
+    global disconnect_timer
+    global currently_playing_file
+
+    if disconnect_timer:
+        disconnect_timer.cancel()
+        disconnect_timer = None
+        
     if len(song_queue) > 0 and ctx.voice_client and ctx.voice_client.is_connected():
         voice_client = ctx.voice_client
+        song_info = song_queue.pop(0)
         
-        # Pega a primeira música da fila
-        next_song = song_queue.pop(0)
-        
-        # O argumento 'after' garante que esta função será chamada de novo, criando um loop
-        voice_client.play(discord.FFmpegPCMAudio(next_song['url'], **FFMPEG_OPTIONS), after=lambda e: play_next(ctx))
-        
-        # Envia a mensagem em uma corrotina para não bloquear o bot
-        # Isso avisa no chat qual é a próxima música
-        bot.loop.create_task(ctx.send(f'**Tocando agora:** {next_song["title"]}'))
+        filepath = song_info.get('filepath')
+        # Se a música já foi baixada pelo buffer, toca direto
+        if filepath and os.path.exists(filepath):
+            currently_playing_file = filepath
+            callback = lambda e: play_after_cleanup(ctx, filepath)
+            source = discord.FFmpegPCMAudio(filepath)
+            voice_client.play(source, after=callback)
+            bot.loop.create_task(ctx.send(f'**Tocando (do buffer):** {song_info["title"]}'))
+        # Se não foi baixada (ex: primeira música, ou skip muito rápido)
+        else:
+            bot.loop.create_task(ctx.send(f"🔎 O buffer está alcançando... Baixando `{song_info['title']}` agora."))
+            bot.loop.create_task(play_now(ctx, song_info['query']))
+    else:
+        disconnect_timer = bot.loop.create_task(disconnect_after_inactivity(ctx))
+
+async def play_now(ctx, query):
+    """Função async para baixar e tocar uma música imediatamente (fallback)."""
+    global currently_playing_file
+    info = await bot.loop.run_in_executor(None, download_song, query)
+    if info:
+        filepath = info['requested_downloads'][0]['filepath']
+        currently_playing_file = filepath
+        callback = lambda e: play_after_cleanup(ctx, filepath)
+        source = discord.FFmpegPCMAudio(filepath)
+        ctx.voice_client.play(source, after=callback)
+        await ctx.send(f'**Tocando agora:** {info["title"]}')
+    else:
+        await ctx.send(f"Não consegui tocar `{query}`.")
+        play_next(ctx)
 
 @bot.command(name='stop')
 async def stop(ctx):
@@ -159,20 +229,31 @@ async def stop(ctx):
     global disconnect_timer
 
     if ctx.voice_client:
-        ctx.voice_client.stop()
-        song_queue = [] # Limpa a fila
-        await ctx.send("Música parada e fila limpa.")
+        # Limpa os arquivos da FILA (buffer), mas NÃO o que está tocando
+        for song in song_queue:
+            filepath = song.get('filepath')
+            if filepath and os.path.exists(filepath):
+                # Usamos a limpeza atrasada aqui também para segurança
+                bot.loop.create_task(delayed_cleanup(filepath))
         
-        # Como o bot agora está inativo, iniciamos o cronômetro
+        song_queue = []
+        
+        # Para o player, o que vai acionar o 'after' para limpar o arquivo atual
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
+        
+        await ctx.send("Música parada e fila de downloads limpa.")
+        
         if disconnect_timer:
-            disconnect_timer.cancel() # Cancela qualquer timer antigo antes de criar um novo
+            disconnect_timer.cancel()
         disconnect_timer = bot.loop.create_task(disconnect_after_inactivity(ctx))
 
 @bot.command(name='skip')
 async def skip(ctx):
     if ctx.voice_client and ctx.voice_client.is_playing():
-        ctx.voice_client.stop() # Isso vai acionar o 'after' da função play e tocar a próxima
-        await ctx.send("Música pulada.")
+        await ctx.send("Pulando para a próxima música...")
+        # Apenas paramos o player. O 'after' callback fará o resto.
+        ctx.voice_client.stop()
     else:
         await ctx.send("Não há música tocando para pular.")
 
@@ -204,18 +285,6 @@ async def disconnect_after_inactivity(ctx):
         await ctx.send("Fiquei um tempo ocioso e a fila está vazia. Estou me desconectando. Quack!")
         await voice_client.disconnect()
         print("Desconectado por inatividade.")
-
-def play_next(ctx):
-    global disconnect_timer
-
-    if len(song_queue) > 0 and ctx.voice_client and ctx.voice_client.is_connected():
-        voice_client = ctx.voice_client
-        next_song = song_queue.pop(0)
-        voice_client.play(discord.FFmpegPCMAudio(next_song['url'], **FFMPEG_OPTIONS), after=lambda e: play_next(ctx))
-        bot.loop.create_task(ctx.send(f'**Tocando agora:** {next_song["title"]}'))
-    else:
-        # A fila acabou, então iniciamos o cronômetro para desconectar
-        disconnect_timer = bot.loop.create_task(disconnect_after_inactivity(ctx))
 
 # Inicialização do QuackMusic
 bot.run(TOKEN)
