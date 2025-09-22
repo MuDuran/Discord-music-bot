@@ -23,8 +23,8 @@ Um bot de música para Discord desenvolvido em Python que toca músicas do YouTu
 
 ## ⚙️ Comandos
 
-- `&play <nome da música ou link>`
-- `&skip`
-- `&stop`
-- `&queue`
-- `&leave`
+- `!play <nome da música ou link>`
+- `!skip`
+- `!stop`
+- `!queue`
+- `!leave`
