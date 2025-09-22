@@ -1,0 +1,125 @@
+version: '3'
+
+dotenv: ['.env']
+
+vars:
+  DOCKER_REGISTRY: docker.lunari.studio
+  IMAGE_NAME: muransgard/discord-music-bot
+  HELM_RELEASE_NAME: discord-music-bot
+  HELM_NAMESPACE: muransgard
+
+tasks:
+  build:
+    desc: Build the Docker image
+    cmds:
+      - docker build -t {{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}}:latest .
+      - docker build -t {{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}}:{{.GITHUB_SHA | default "dev"}} .
+  push:
+    desc: Push the Docker image to registry
+    deps: [build]
+    cmds:
+      - docker push {{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}}:latest
+      - docker push {{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}}:{{.GITHUB_SHA | default "dev"}}
+
+  docker:
+    desc: Build and push Docker image
+    deps: [push]
+
+  helm-install:
+    desc: Install the Helm chart with environment variables
+    dir: helm
+    vars:
+      DISCORD_TOKEN: '{{.DISCORD_TOKEN | default ""}}'
+      SPOTIFY_CLIENT_ID: '{{.SPOTIFY_CLIENT_ID | default ""}}'
+      SPOTIFY_CLIENT_SECRET: '{{.SPOTIFY_CLIENT_SECRET | default ""}}'
+    preconditions:
+      - sh: '[ -n "{{.DISCORD_TOKEN}}" ]'
+        msg: 'DISCORD_TOKEN is required. Set it in .env file or environment'
+      - sh: '[ -n "{{.SPOTIFY_CLIENT_ID}}" ]'
+        msg: 'SPOTIFY_CLIENT_ID is required. Set it in .env file or environment'
+      - sh: '[ -n "{{.SPOTIFY_CLIENT_SECRET}}" ]'
+        msg: 'SPOTIFY_CLIENT_SECRET is required. Set it in .env file or environment'
+    cmds:
+      - |
+        helm upgrade --install {{.HELM_RELEASE_NAME}} . \
+          --namespace {{.HELM_NAMESPACE}} \
+          --create-namespace \
+          --set image.repository={{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}} \
+          --set image.tag={{.GITHUB_SHA | default "latest"}} \
+          --set secrets.discordToken="{{.DISCORD_TOKEN}}" \
+          --set secrets.spotifyClientId="{{.SPOTIFY_CLIENT_ID}}" \
+          --set secrets.spotifyClientSecret="{{.SPOTIFY_CLIENT_SECRET}}"
+
+  helm-install-with-persistence:
+    desc: Install the Helm chart with persistence enabled
+    dir: helm
+    vars:
+      DISCORD_TOKEN: '{{.DISCORD_TOKEN | default ""}}'
+      SPOTIFY_CLIENT_ID: '{{.SPOTIFY_CLIENT_ID | default ""}}'
+      SPOTIFY_CLIENT_SECRET: '{{.SPOTIFY_CLIENT_SECRET | default ""}}'
+    preconditions:
+      - sh: '[ -n "{{.DISCORD_TOKEN}}" ]'
+        msg: 'DISCORD_TOKEN is required. Set it in .env file or environment'
+      - sh: '[ -n "{{.SPOTIFY_CLIENT_ID}}" ]'
+        msg: 'SPOTIFY_CLIENT_ID is required. Set it in .env file or environment'
+      - sh: '[ -n "{{.SPOTIFY_CLIENT_SECRET}}" ]'
+        msg: 'SPOTIFY_CLIENT_SECRET is required. Set it in .env file or environment'
+    cmds:
+      - |
+        helm upgrade --install {{.HELM_RELEASE_NAME}} . \
+          --namespace {{.HELM_NAMESPACE}} \
+          --create-namespace \
+          --set image.repository={{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}} \
+          --set image.tag={{.GITHUB_SHA | default "latest"}} \
+          --set secrets.discordToken="{{.DISCORD_TOKEN}}" \
+          --set secrets.spotifyClientId="{{.SPOTIFY_CLIENT_ID}}" \
+          --set secrets.spotifyClientSecret="{{.SPOTIFY_CLIENT_SECRET}}" \
+          --set persistence.enabled=true
+
+  helm-uninstall:
+    desc: Uninstall the Helm chart
+    cmds:
+      - helm uninstall {{.HELM_RELEASE_NAME}} --namespace {{.HELM_NAMESPACE}}
+
+  helm-status:
+    desc: Check Helm release status
+    cmds:
+      - helm status {{.HELM_RELEASE_NAME}} --namespace {{.HELM_NAMESPACE}}
+
+  logs:
+    desc: Show bot logs
+    cmds:
+      - kubectl logs -l app.kubernetes.io/name={{.IMAGE_NAME}} -n {{.HELM_NAMESPACE}} --tail=100 -f
+
+  deploy:
+    desc: Build, push, and deploy the complete application
+    deps: [docker, helm-install]
+
+  deploy-with-persistence:
+    desc: Build, push, and deploy the application with persistence
+    deps: [docker, helm-install-with-persistence]
+
+  clean:
+    desc: Clean up local Docker images
+    cmds:
+      - docker rmi {{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}}:latest || true
+      - docker rmi {{.DOCKER_REGISTRY}}/{{.IMAGE_NAME}}:{{.GITHUB_SHA | default "dev"}} || true
+
+  help:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  check-env:
+    desc: Check if required environment variables are set
+    cmds:
+      - |
+        echo "Checking environment variables..."
+        echo "DISCORD_TOKEN: {{if .DISCORD_TOKEN}}✓ Set{{else}}✗ Not set{{end}}"
+        echo "SPOTIFY_CLIENT_ID: {{if .SPOTIFY_CLIENT_ID}}✓ Set{{else}}✗ Not set{{end}}"
+        echo "SPOTIFY_CLIENT_SECRET: {{if .SPOTIFY_CLIENT_SECRET}}✓ Set{{else}}✗ Not set{{end}}"
+        echo ""
+        echo "Docker Registry: {{.DOCKER_REGISTRY}}"
+        echo "Image Name: {{.IMAGE_NAME}}"
+        echo "Helm Release: {{.HELM_RELEASE_NAME}}"
+        echo "Namespace: {{.HELM_NAMESPACE}}"

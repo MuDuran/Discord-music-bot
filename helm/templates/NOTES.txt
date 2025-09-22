@@ -1,0 +1,45 @@
+1. Your Discord Music Bot has been deployed!
+
+2. To check the status of your deployment:
+   kubectl get pods -l "app.kubernetes.io/name={{ include "discord-music-bot.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+3. To view the logs:
+   kubectl logs -l "app.kubernetes.io/name={{ include "discord-music-bot.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+4. Configuration:
+   {{- if not .Values.secrets.discordToken }}
+   
+   ⚠️  WARNING: Discord token is not set!
+   You need to set the Discord bot token in values.yaml or using --set:
+   helm upgrade {{ .Release.Name }} . --set secrets.discordToken="YOUR_DISCORD_TOKEN"
+   {{- end }}
+   
+   {{- if not .Values.secrets.spotifyClientId }}
+   
+   ⚠️  WARNING: Spotify client ID is not set!
+   You need to set the Spotify client ID in values.yaml or using --set:
+   helm upgrade {{ .Release.Name }} . --set secrets.spotifyClientId="YOUR_SPOTIFY_CLIENT_ID"
+   {{- end }}
+   
+   {{- if not .Values.secrets.spotifyClientSecret }}
+   
+   ⚠️  WARNING: Spotify client secret is not set!
+   You need to set the Spotify client secret in values.yaml or using --set:
+   helm upgrade {{ .Release.Name }} . --set secrets.spotifyClientSecret="YOUR_SPOTIFY_CLIENT_SECRET"
+   {{- end }}
+
+5. To update secrets after deployment:
+   helm upgrade {{ .Release.Name }} . \
+     --set secrets.discordToken="YOUR_DISCORD_TOKEN" \
+     --set secrets.spotifyClientId="YOUR_SPOTIFY_CLIENT_ID" \
+     --set secrets.spotifyClientSecret="YOUR_SPOTIFY_CLIENT_SECRET"
+
+6. Storage configuration:
+   {{- if .Values.persistence.enabled }}
+   - Persistent storage is enabled ({{ .Values.persistence.size }})
+   - Downloads and cookies will be stored persistently
+   {{- else }}
+   - Using ephemeral storage (files will be lost on pod restart)
+   {{- end }}
+
+For more information, visit: https://github.com/MuDuran/Discord-music-bot

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: discord-music-bot
+description: A Discord music bot that plays audio from various sources
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - discord
+  - music
+  - bot
+  - audio
+maintainers:
+  - name: Discord Music Bot Team
+sources:
+  - https://github.com/MuDuran/Discord-music-bot
