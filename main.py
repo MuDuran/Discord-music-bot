@@ -3,6 +3,7 @@ import discord
 import spotipy
 import yt_dlp
 import asyncio
+import subprocess
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -12,11 +13,30 @@ song_queue = []
 disconnect_timer = None
 currently_playing_file = None
 
-# Carrega as variáveis de ambiente do arquivo .env
-load_dotenv()
+# --- Carregamento Inteligente de Variáveis de Ambiente ---
+
+def get_current_branch():
+    """Retorna o nome da branch atual do Git."""
+    try:
+        return subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).decode('utf-8').strip()
+    except Exception:
+        return None
+
+BRANCH_NAME = get_current_branch()
+if BRANCH_NAME == 'dev':
+    print("--- EXECUTANDO EM AMBIENTE DE DESENVOLVIMENTO (DEV) ---")
+    load_dotenv(dotenv_path='.env.dev')
+else:
+    print("--- EXECUTANDO EM AMBIENTE DE PRODUÇÃO (MAIN) ---")
+    load_dotenv(dotenv_path='.env.main')
+
 TOKEN = os.getenv('DISCORD_TOKEN')
 SPOTIFY_ID = os.getenv('SPOTIFY_CLIENT_ID')
 SPOTIFY_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+
+if not TOKEN:
+    print("ERRO CRÍTICO: Token do Discord não encontrado. Verifique seu arquivo .env.*")
+    exit()
 
 # Configura a autenticação com o Spotify
 spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIFY_ID,
