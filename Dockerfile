@@ -1,38 +1,39 @@
-# Use Python 3.13 slim image as base
+# Use a imagem Python 3.13 slim como base
 FROM python:3.13-slim
 
-# Set working directory
+# Define o diretório de trabalho dentro do contêiner
 WORKDIR /app
 
-# Install system dependencies including FFmpeg
-RUN apt-get update && apt-get install -y \
+# Instala dependências do sistema: FFmpeg (essencial) e Git (para a função get_current_branch)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
+# Copia o arquivo de dependências do Python
 COPY requirements.txt .
 
-# Install Python dependencies
+# Instala as dependências do Python
+# Usamos --no-cache-dir para manter a imagem menor
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# --- MUDANÇA 1: Copiando todo o código da aplicação ---
+# Copia não apenas o main.py, mas também as pastas cogs/ e utils/
+COPY cogs/ ./cogs/
+COPY utils/ ./utils/
 COPY main.py .
 
-# Create directories for downloads and cookies
-RUN mkdir -p downloads cookies
 
-# Create a non-root user for security
+# Cria o diretório de downloads
+RUN mkdir -p downloads
+
+# --- MUDANÇA 2: Segurança e Permissões ---
+# Cria um usuário não-root para rodar a aplicação
 RUN useradd -m -s /bin/bash musicbot
-RUN chown -R musicbot:musicbot /app
+# MUDANÇA 3: Garante que o novo usuário seja dono tanto do app quanto da pasta de downloads
+RUN chown -R musicbot:musicbot /app/downloads /app
+# Muda para o usuário não-root
 USER musicbot
 
-# Expose port (not strictly necessary for Discord bot, but good practice)
-EXPOSE 8080
-
-# Health check (optional - checks if the bot process is running)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD pgrep -f "python main.py" || exit 1
-
-# Run the application
+# Comando para rodar a aplicação quando o contêiner iniciar
 CMD ["python", "main.py"]
