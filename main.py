@@ -14,7 +14,8 @@ def get_current_branch():
         return None
 
 BRANCH_NAME = get_current_branch()
-env_path = '.env.dev' if BRANCH_NAME == 'dev' else '.env.main'
+is_dev = BRANCH_NAME == 'dev'
+env_path = '.env.dev' if is_dev else '.env.main'
 load_dotenv(dotenv_path=env_path)
 print(f"--- EXECUTANDO EM AMBIENTE: {BRANCH_NAME.upper() if BRANCH_NAME else 'PRODUÇÃO'} ---")
 
@@ -25,7 +26,11 @@ if not TOKEN:
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='&', intents=intents)
+
+prefix="!"
+if is_dev:
+    prefix="&"
+bot = commands.Bot(command_prefix=prefix, intents=intents)
 
 async def load_cogs():
     """Carrega todos os cogs da pasta /cogs/."""
