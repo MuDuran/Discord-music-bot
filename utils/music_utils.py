@@ -18,8 +18,6 @@ YDL_OPTIONS = {
     'cookiefile': 'youtube-cookies.txt' if os.path.exists('youtube-cookies.txt') else None
 }
 
-# --- A CORREÇÃO PRINCIPAL ESTÁ AQUI ---
-# Removemos as opções de 'before_options' que eram para streaming.
 # '-vn' significa "no video", o que é correto para áudio.
 # '-loglevel error' fará o FFmpeg reportar erros no console se algo ainda der errado.
 FFMPEG_OPTIONS = {'options': '-vn -loglevel error'}

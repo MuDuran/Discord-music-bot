@@ -8,10 +8,10 @@ python-dotenv~=1.1.1
 yt-dlp~=2025.9.26
 spotipy~=2.25.1
 youtube-search-python~=1.6.6
+pynacl
 
 # ===============================================
 # === Dependências Travadas (Patches) ===
 # ===============================================
 # Travamos a versão do httpx para resolver uma
 # incompatibilidade com o youtube-search-python
-httpx==0.25.2

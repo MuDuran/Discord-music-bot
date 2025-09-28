@@ -19,7 +19,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # --- MUDANÇA 1: Copiando todo o código da aplicação ---
 # Copia não apenas o main.py, mas também as pastas cogs/ e utils/
-COPY . .
+COPY cogs/ ./cogs/
+COPY utils/ ./utils/
+COPY main.py .
+
 
 # Cria o diretório de downloads
 RUN mkdir -p downloads
